@@ -461,7 +461,7 @@ export function useSFUConnection(deps: {
 						agoraRtmToken: prefetchedDetails.agoraRtmToken || undefined,
 						meetingId,
 						userId: prefetchedDetails.agoraUid || currentUser.currentUser.value?.user_id || "anonymous",
-						userName: currentUser.currentUser.value?.full_name || currentUser.currentUser.value?.name,
+						userName: guestName || currentUser.currentUser.value?.full_name || currentUser.currentUser.value?.name,
 						userAvatar: currentUser.currentUser.value?.avatar,
 					});
 				} catch (rtmErr) {
@@ -1119,8 +1119,13 @@ export function useSFUConnection(deps: {
 		recoveryTimeline: computed(
 			() => participantConnectionState.recoveryTimeline,
 		),
-		registerRemoteVideoElement: (participantId, element) =>
-			videoManager.registerRemoteVideoElement(participantId, element),
+		registerRemoteVideoElement: (participantId, element) => {
+			if (sfuManager.value && typeof (sfuManager.value as any).registerRemoteVideoElement === "function") {
+				(sfuManager.value as any).registerRemoteVideoElement(participantId, element);
+			} else {
+				videoManager.registerRemoteVideoElement(participantId, element);
+			}
+		},
 		registerLocalPreview: (element) =>
 			videoManager.registerLocalPreview(element),
 		attachLocalPreview: (stream) => videoManager.attachLocalPreview(stream),

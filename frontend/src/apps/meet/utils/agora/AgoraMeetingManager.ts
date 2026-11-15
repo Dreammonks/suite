@@ -141,6 +141,11 @@ export class AgoraMeetingManager {
 			this.userId,
 		);
 
+		// Notify any remote users already in the channel
+		for (const remoteUser of this.client.remoteUsers) {
+			this.ensureParticipantJoined(remoteUser);
+		}
+
 		// Enable dual stream mode (HD for active speaker / pinned, SD for grid)
 		try {
 			await this.client.enableDualStreamMode();
@@ -162,6 +167,23 @@ export class AgoraMeetingManager {
 		this.eventHandlers.onLifecycleStateChange?.("ready");
 	}
 
+	private ensureParticipantJoined(user: IAgoraRTCRemoteUser): void {
+		const uidStr = String(user.uid);
+		if (uidStr.endsWith("-screen")) return;
+
+		const isGuest = uidStr.startsWith("guest-") || uidStr.startsWith("guest_");
+		const participant: Participant = {
+			user_id: uidStr,
+			user_name: uidStr,
+			avatar: null,
+			initials: uidStr.slice(0, 2).toUpperCase(),
+			audio_enabled: user.hasAudio,
+			video_enabled: user.hasVideo,
+			is_guest: isGuest,
+		};
+		this.eventHandlers.onParticipantJoined?.(participant);
+	}
+
 	private setupRTCEvents(client: IAgoraRTCClient): void {
 		client.on("user-published", async (user: IAgoraRTCRemoteUser, mediaType: "audio" | "video") => {
 			await client.subscribe(user, mediaType);
@@ -181,13 +203,25 @@ export class AgoraMeetingManager {
 				return;
 			}
 
+			// Ensure remote participant is registered in meeting store
+			this.ensureParticipantJoined(user);
+
 			// Normal participant media
 			if (mediaType === "video" && user.videoTrack) {
 				const remoteElement = this.remoteVideoElements.get(uidStr);
 				if (remoteElement) {
-					user.videoTrack.play(remoteElement);
+					try {
+						user.videoTrack.play(remoteElement);
+					} catch (playErr) {
+						console.warn("[AgoraMeetingManager] videoTrack.play error:", playErr);
+					}
 				}
 				const stream = new MediaStream([user.videoTrack.getMediaStreamTrack()]);
+				try {
+					await this.videoManager.attachStream(uidStr, stream, false);
+				} catch (attachErr) {
+					console.warn("[AgoraMeetingManager] attachStream error:", attachErr);
+				}
 				this.eventHandlers.onParticipantUpdated?.(
 					uidStr,
 					{ user_id: uidStr, user_name: uidStr, avatar: null, initials: uidStr.slice(0, 2).toUpperCase() },
@@ -217,6 +251,7 @@ export class AgoraMeetingManager {
 			}
 
 			if (mediaType === "video") {
+				this.videoManager.detachVideoStream(uidStr);
 				this.eventHandlers.onParticipantUpdated?.(
 					uidStr,
 					{ user_id: uidStr, user_name: uidStr, avatar: null, initials: uidStr.slice(0, 2).toUpperCase() },
@@ -234,19 +269,7 @@ export class AgoraMeetingManager {
 		});
 
 		client.on("user-joined", (user: IAgoraRTCRemoteUser) => {
-			const uidStr = String(user.uid);
-			if (uidStr.endsWith("-screen")) return;
-
-			const participant: Participant = {
-				user_id: uidStr,
-				user_name: uidStr,
-				avatar: null,
-				initials: uidStr.slice(0, 2).toUpperCase(),
-				audio_enabled: user.hasAudio,
-				video_enabled: user.hasVideo,
-				is_guest: uidStr.startsWith("guest-"),
-			};
-			this.eventHandlers.onParticipantJoined?.(participant);
+			this.ensureParticipantJoined(user);
 		});
 
 		client.on("user-left", (user: IAgoraRTCRemoteUser) => {
@@ -258,6 +281,7 @@ export class AgoraMeetingManager {
 				return;
 			}
 			this.remoteVideoElements.delete(uidStr);
+			this.videoManager.removeVideoElement(uidStr);
 			this.eventHandlers.onParticipantLeft?.({ participantId: uidStr });
 		});
 
@@ -710,10 +734,20 @@ export class AgoraMeetingManager {
 	registerRemoteVideoElement(participantId: string, element: HTMLVideoElement | null): void {
 		if (element) {
 			this.remoteVideoElements.set(participantId, element);
-			// If remote user video track is already subscribed, play to element
+			// If remote user video track is already subscribed, attach to element
 			const remoteUser = this.client?.remoteUsers.find((u) => String(u.uid) === participantId);
 			if (remoteUser?.videoTrack) {
-				remoteUser.videoTrack.play(element);
+				try {
+					remoteUser.videoTrack.play(element);
+				} catch (playErr) {
+					console.warn("[AgoraMeetingManager] videoTrack.play error:", playErr);
+				}
+				try {
+					const stream = new MediaStream([remoteUser.videoTrack.getMediaStreamTrack()]);
+					void this.videoManager.attachStream(participantId, stream, false);
+				} catch (attachErr) {
+					console.warn("[AgoraMeetingManager] registerRemoteVideoElement attachStream error:", attachErr);
+				}
 			}
 		} else {
 			this.remoteVideoElements.delete(participantId);
