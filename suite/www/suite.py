@@ -22,6 +22,14 @@ def get_context(context):
     # the slides service worker must not keep this shell as the offline app
     if frappe.session.user == "Guest":
         frappe.local.response_headers["X-Suite-Guest"] = "1"
+    else:
+        from suite.api import check_app_permission
+
+        if not check_app_permission():
+            frappe.throw(
+                frappe._("You do not have permission to access Frappe Suite"),
+                frappe.PermissionError,
+            )
 
     context.boot = get_boot()
     context.boot.csrf_token = csrf_token
@@ -41,6 +49,13 @@ def get_boot():
     sentry_dsn = None
     if frappe.get_system_settings("enable_telemetry"):
         sentry_dsn = os.getenv("SUITE_FRONTEND_SENTRY_DSN")
+
+    vapid_public_key = frappe.conf.get("vapid_public_key")
+    direct_web_push_enabled = bool(
+        frappe.conf.get("dreammonks_direct_web_push")
+        and vapid_public_key
+        and frappe.conf.get("vapid_private_key")
+    )
 
     # Guests get neutral values: the SPA redirects them to login, so the
     # router never needs the real onboarding state or workspace branding.
@@ -62,6 +77,11 @@ def get_boot():
             # (frappe-push-notification.ts / PWASettings.vue). Mirrors the old
             # standalone www/mail.py boot, which the suite shell replaced.
             "push_relay_server_url": frappe.conf.get("push_relay_server_url") or "",
+            # The production deployment uses one site-local VAPID subscription
+            # for Suite, Raven, and Gameplan. Only the public key reaches the
+            # browser; the private key never leaves site_config.
+            "dreammonks_web_push_enabled": direct_web_push_enabled,
+            "dreammonks_vapid_public_key": vapid_public_key if direct_web_push_enabled else "",
             # Onboarding gate, read synchronously by the router (extend_bootinfo
             # does not reach this shell, so the flags live in its own boot).
             "suite_is_onboarded": onboarding_state["is_onboarded"],

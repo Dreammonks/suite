@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, provide, ref } from 'vue'
+import { computed, onMounted, provide, ref } from 'vue'
 import { ChevronLeft } from 'lucide-vue-next'
 import { Button, LoadingIndicator, SettingsRow, Switch, createResource } from 'frappe-ui'
 
@@ -84,20 +84,29 @@ const emit = defineEmits(['close'])
 // top bar here carries it).
 provide('app-settings-mobile-page', true)
 
-const isPushNotificationsSettingEnabled = ref(
-	window.frappePushNotification?.isNotificationEnabled(),
-)
+const isPushNotificationsSettingEnabled = ref(false)
 const isLoading = ref(false)
 
 const isPushNotificationEnabled = computed(
-	() => window.push_relay_server_url && isPushNotificationRelayEnabled.data,
+	() =>
+		window.dreammonks_web_push_enabled ||
+		Boolean(window.push_relay_server_url && isPushNotificationRelayEnabled.data),
 )
 
 const description = computed(() =>
-	!isPushNotificationEnabled.value
-		? __('Push notifications have been disabled on your site')
-		: '',
+	window.dreammonks_web_push_enabled
+		? __('Site-wide notifications for Mail, Calendar reminders, Raven, and Gameplan on this browser')
+		: !isPushNotificationEnabled.value
+			? __('Push notifications have been disabled on your site')
+			: '',
 )
+
+const refreshPushNotificationState = async () => {
+	isPushNotificationsSettingEnabled.value =
+		(await window.frappePushNotification?.isNotificationEnabled()) ?? false
+}
+
+onMounted(refreshPushNotificationState)
 
 const togglePushNotifications = async (isEnabled: boolean) => {
 	if (isEnabled) return enablePushNotifications()

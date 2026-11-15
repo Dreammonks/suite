@@ -24,6 +24,8 @@ import {
 	SFUResponseError,
 } from "../utils/SFUClient";
 import { SFUMeetingManager } from "../utils/SFUMeetingManager";
+import { AgoraMeetingManager } from "../utils/agora/AgoraMeetingManager";
+import { AgoraRTMSignalChannel } from "../utils/media/AgoraRTMSignalChannel";
 import { getClientTelemetry } from "../utils/telemetry/ClientTelemetry";
 import MeetAvatar from "../components/MeetAvatar.vue";
 import { useChatStore } from "./useChatStore";
@@ -449,7 +451,28 @@ export function useSFUConnection(deps: {
 		try {
 			let wasAutomaticallyMuted = false;
 			const wantsAudio = mediaState.isMicOn;
-			manager = new SFUMeetingManager(sfuClient, videoManager);
+
+			if (prefetchedDetails?.agoraAppId) {
+				const agoraChannel = new AgoraRTMSignalChannel();
+				sfuClient.signalChannel = agoraChannel;
+				try {
+					await agoraChannel.connect({
+						agoraAppId: prefetchedDetails.agoraAppId,
+						agoraRtmToken: prefetchedDetails.agoraRtmToken || undefined,
+						meetingId,
+						userId: prefetchedDetails.agoraUid || currentUser.currentUser.value?.user_id || "anonymous",
+						userName: currentUser.currentUser.value?.full_name || currentUser.currentUser.value?.name,
+						userAvatar: currentUser.currentUser.value?.avatar,
+					});
+				} catch (rtmErr) {
+					console.warn("[useSFUConnection] Agora RTM signaling connection warning:", rtmErr);
+				}
+				const agoraManager = new AgoraMeetingManager(videoManager);
+				agoraManager.setRTMClient(agoraChannel.getRTMClient());
+				manager = agoraManager as unknown as SFUMeetingManager;
+			} else {
+				manager = new SFUMeetingManager(sfuClient, videoManager);
+			}
 			manager.initialize({
 				meetingId,
 				currentUser: currentUser.currentUser.value,
@@ -467,6 +490,14 @@ export function useSFUConnection(deps: {
 				conflictId,
 				prepareJoin: async (signal) => {
 					if (signal.aborted) throw signal.reason;
+					if (prefetchedDetails?.agoraAppId) {
+						if (!guestName) {
+							isHost = initialIsHost;
+							isCohost = initialIsCohost;
+							isCurrentTabHost.value = isHost;
+						}
+						return;
+					}
 					connectionState.codecStrategy = sfuClient.getCodecStrategy() || "svc";
 					if (!guestName) {
 						isHost = sfuClient.connectionDetails.isHost || isHost;
@@ -512,18 +543,20 @@ export function useSFUConnection(deps: {
 				},
 				publishLocalMedia: async (signal) => {
 					if (wantsAudio) {
-						let shouldMute = true;
-						try {
-							const participants = await sfuClient.getRoomParticipants();
-							if (signal.aborted) throw signal.reason;
-							shouldMute =
-								participants.length > LARGE_MEETING_PARTICIPANT_THRESHOLD;
-						} catch (error) {
-							if (signal.aborted) throw error;
-							console.warn(
-								"Could not determine meeting size; joining muted:",
-								(error as Error).message,
-							);
+						let shouldMute = false;
+						if (!prefetchedDetails?.agoraAppId) {
+							try {
+								const participants = await sfuClient.getRoomParticipants();
+								if (signal.aborted) throw signal.reason;
+								shouldMute =
+									participants.length > LARGE_MEETING_PARTICIPANT_THRESHOLD;
+							} catch (error) {
+								if (signal.aborted) throw error;
+								console.warn(
+									"Could not determine meeting size; joining muted:",
+									(error as Error).message,
+								);
+							}
 						}
 						if (shouldMute) {
 							mediaState.isMicOn = false;
@@ -555,10 +588,10 @@ export function useSFUConnection(deps: {
 						(publication) => {
 							const videoStillRequested = publishVideo && mediaState.isCameraOn;
 							const audioStillRequested = publishAudio && mediaState.isMicOn;
-							if (videoStillRequested && publication.videoProducer) {
+							if (videoStillRequested && publication.videoProducer && !prefetchedDetails?.agoraAppId) {
 								sfuClient.sendMediaControl("video_on");
 							}
-							if (audioStillRequested && publication.audioProducer) {
+							if (audioStillRequested && publication.audioProducer && !prefetchedDetails?.agoraAppId) {
 								sfuClient.sendMediaControl("unmute");
 							}
 							if (
@@ -681,6 +714,9 @@ export function useSFUConnection(deps: {
 				connectionState.guestId = admittedSession.guestId;
 				connectionState.guestSessionToken = admittedSession.guestSessionToken;
 				connectionState.guestAuthToken = response.auth_token;
+				connectionState.guestSfuUrl = response.sfu_url || null;
+				connectionState.guestSfuPort =
+					response.sfu_port == null ? null : String(response.sfu_port);
 				if (response.host_only_chat !== undefined) {
 					chatStore.hostOnlyChat = response.host_only_chat;
 				}
@@ -940,6 +976,9 @@ export function useSFUConnection(deps: {
 			connectionState.guestSessionToken = joinResult.guest_session_token;
 			connectionState.guestAuthToken =
 				joinResult.auth_token || null;
+			connectionState.guestSfuUrl = joinResult.sfu_url || null;
+			connectionState.guestSfuPort =
+				joinResult.sfu_port == null ? null : String(joinResult.sfu_port);
 
 			if (joinResult.host_only_chat !== undefined) {
 				chatStore.hostOnlyChat = !!joinResult.host_only_chat;
@@ -950,6 +989,8 @@ export function useSFUConnection(deps: {
 				lobbyStore.isWaitingForApproval = true;
 				connectionState.isInPreview = false;
 				connectionState.guestAuthToken = null;
+			connectionState.guestSfuUrl = null;
+			connectionState.guestSfuPort = null;
 				return;
 			}
 			if (joinResult.recording !== undefined)
@@ -987,6 +1028,8 @@ export function useSFUConnection(deps: {
 			connectionState.isInPreview = false;
 
 			connectionState.guestAuthToken = null;
+			connectionState.guestSfuUrl = null;
+			connectionState.guestSfuPort = null;
 
 			const joinResult = normalizeJoinPayload(
 				await joinMeetingAPI.submit({ meeting_id: meetingId }),

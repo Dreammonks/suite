@@ -186,16 +186,7 @@ export class TransportManager {
 	}
 
 	async initializeDevice() {
-		if (this.device) return this.device;
-		const { Device } = await import("mediasoup-client");
-		const client = this.getClient();
-		this.device = new Device();
-		const routerRtpCapabilities = await client.getRouterRtpCapabilities();
-		this.routerRtpCapabilities = routerRtpCapabilities;
-
-		await this.device.load({ routerRtpCapabilities });
-
-		return this.device;
+		throw new Error("MediaSoup SFU is retired. Please configure Agora in Meet Settings.");
 	}
 
 	async createSendTransport() {

@@ -41,6 +41,13 @@ export interface ConnectionDetails {
 	isHost: boolean;
 	isCohost: boolean;
 	userData?: JoinUserData;
+	agoraAppId?: string | null;
+	agoraChannelName?: string | null;
+	agoraUid?: string | null;
+	agoraScreenUid?: string | null;
+	agoraRtcToken?: string | null;
+	agoraScreenRtcToken?: string | null;
+	agoraRtmToken?: string | null;
 }
 
 /**
@@ -72,7 +79,8 @@ export function connectionDetailsFromJoinPayload(
 		typeof payload.sfu_url === "string" && payload.sfu_url
 			? payload.sfu_url
 			: null;
-	if (!authToken || !sfuUrl) {
+	const hasAgora = Boolean(payload.agora_app_id);
+	if (!hasAgora && (!authToken || !sfuUrl)) {
 		return null;
 	}
 
@@ -129,6 +137,13 @@ export function connectionDetailsFromJoinPayload(
 		e2eeRequired: Boolean(payload.e2ee_required),
 		isHost: Boolean(payload.is_host),
 		isCohost: Boolean(payload.is_cohost),
+		agoraAppId: payload.agora_app_id || null,
+		agoraChannelName: payload.channel_name || meetingId || options.expectedMeetingId || null,
+		agoraUid: payload.uid || userId,
+		agoraScreenUid: payload.screen_uid || (userId ? `${userId}-screen` : null),
+		agoraRtcToken: payload.rtc_token || null,
+		agoraScreenRtcToken: payload.screen_rtc_token || null,
+		agoraRtmToken: payload.rtm_token || null,
 	};
 }
 

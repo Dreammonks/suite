@@ -8,7 +8,11 @@
   "section_break_mm5y",
   "codec_strategy",
   "allow_guest",
-  "enable_recording"
+  "enable_recording",
+  "agora_section",
+  "agora_app_id",
+  "agora_app_certificate",
+  "agora_token_expiry"
  ],
  "fields": [
   {
@@ -36,6 +40,28 @@
    "fieldname": "enable_recording",
    "fieldtype": "Check",
    "label": "Enable Recording"
+  },
+  {
+   "fieldname": "agora_section",
+   "fieldtype": "Section Break",
+   "label": "Agora Configuration"
+  },
+  {
+   "fieldname": "agora_app_id",
+   "fieldtype": "Data",
+   "label": "Agora App ID"
+  },
+  {
+   "fieldname": "agora_app_certificate",
+   "fieldtype": "Password",
+   "label": "Agora App Certificate"
+  },
+  {
+   "default": "86400",
+   "description": "Token validity in seconds (default: 24 hours)",
+   "fieldname": "agora_token_expiry",
+   "fieldtype": "Int",
+   "label": "Agora Token Expiry (Seconds)"
   }
  ],
  "grid_page_length": 50,

@@ -6,9 +6,13 @@ export {}
 
 declare global {
 	interface Window {
-		/** FCM push-notification client, set up by the mail module's SW registration. */
+		/** Push-notification client, set up by the mail module's SW registration. */
 		frappePushNotification?: import('@/apps/mail/utils/frappe-push-notification').default
 		/** Notification relay server base URL (Frappe push notifications). */
 		push_relay_server_url: string
+		/** Whether the site-local VAPID provider is fully configured. */
+		dreammonks_web_push_enabled: boolean
+		/** Public application-server key for the site-local VAPID provider. */
+		dreammonks_vapid_public_key: string
 	}
 }

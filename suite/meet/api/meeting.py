@@ -13,6 +13,7 @@ from frappe import _
 from suite.meet import guest_access
 from suite.meet.api.recording import get_active_recording_state
 from suite.meet.doctype.meet_room.meet_room import MeetRoom
+from suite.meet.utils.agora import build_agora_connection_details, get_agora_config
 from suite.meet.utils.sfu_config import get_sfu_config
 from suite.meet.utils.user import validate_guest_name
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -132,6 +133,18 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
         host_only_chat=bool(meeting.host_only_chat),
     )
 
+    agora_config = get_agora_config()
+    agora_details = {}
+    if agora_config.get("app_id"):
+        try:
+            agora_details = build_agora_connection_details(
+                meeting_id=meeting.name,
+                user_id=user,
+                is_publisher=True,
+            )
+        except Exception as e:
+            frappe.logger("meet").warning(f"Failed to generate Agora tokens for {user}: {e}")
+
     return {
         "sfu_url": sfu_config["sfu_server_url"],
         "sfu_port": sfu_config["sfu_server_port"],
@@ -150,6 +163,7 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
         },
         "expires_in": 3600,
         "host_only_chat": bool(meeting.host_only_chat),
+        **agora_details,
     }
 
 
@@ -179,6 +193,18 @@ def _build_guest_connection_details(
         host_only_chat=bool(meeting.host_only_chat),
         guest_generation=lease.generation,
     )
+    agora_config = get_agora_config()
+    agora_details = {}
+    if agora_config.get("app_id"):
+        try:
+            agora_details = build_agora_connection_details(
+                meeting_id=meeting.name,
+                user_id=lease.guest_id,
+                is_publisher=True,
+                expiry_seconds=expires_in,
+            )
+        except Exception as e:
+            frappe.logger("meet").warning(f"Failed to generate Agora guest tokens: {e}")
     return {
         "status": "joined",
         "meeting_id": meeting.name,
@@ -194,6 +220,7 @@ def _build_guest_connection_details(
         "e2ee_required": e2ee_required,
         "recording": get_active_recording_state(meeting.name),
         "message": "Successfully joined meeting",
+        **agora_details,
     }
 
 
@@ -340,12 +367,47 @@ def refresh_sfu_token(meeting_id: str) -> dict:
         host_only_chat=bool(meeting.host_only_chat),
     )
 
+    agora_config = get_agora_config()
+    agora_details = {}
+    if agora_config.get("app_id"):
+        try:
+            agora_details = build_agora_connection_details(
+                meeting_id=meeting.name,
+                user_id=frappe.session.user,
+                is_publisher=True,
+            )
+        except Exception as e:
+            frappe.logger("meet").warning(f"Failed to refresh Agora tokens for {frappe.session.user}: {e}")
+
     return {
         "auth_token": auth_token,
         "expires_in": 3600,
         "codec_strategy": _get_codec_strategy(),
         "e2ee_required": e2ee_required,
+        **agora_details,
     }
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def refresh_agora_token(meeting_id: str) -> dict:
+    """Refresh Agora authentication tokens for ongoing meetings."""
+    meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id)
+
+    if meeting.is_user_banned(frappe.session.user):
+        frappe.throw(_("You are banned from this meeting"), frappe.PermissionError)
+
+    if frappe.session.user not in meeting.get_members():
+        frappe.throw(_("Not a meeting member"), frappe.PermissionError)
+
+    if not meeting.can_join(frappe.session.user):
+        frappe.throw(_("Access denied"), frappe.PermissionError)
+
+    return build_agora_connection_details(
+        meeting_id=meeting.name,
+        user_id=frappe.session.user,
+        is_publisher=True,
+    )
 
 
 @frappe.whitelist()
@@ -369,6 +431,13 @@ def get_sfu_presence_preview_token(meeting_id: str) -> dict:
 
     if meeting.meeting_type == "restricted" and not meeting.is_user_approved(frappe.session.user):
         return {"restricted_preview": True}
+
+    agora_config = get_agora_config()
+    if agora_config.get("app_id"):
+        return {
+            "restricted_preview": True,
+            "agora_app_id": agora_config["app_id"],
+        }
 
     sfu_config = get_sfu_config()
 

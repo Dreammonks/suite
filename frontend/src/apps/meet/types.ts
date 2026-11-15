@@ -82,6 +82,14 @@ export interface JoinPayload {
 	host_only_chat?: boolean;
 	recording_enabled?: boolean;
 	user_data?: JoinUserData;
+	agora_app_id?: string;
+	channel_name?: string;
+	uid?: string;
+	screen_uid?: string;
+	rtc_token?: string;
+	screen_rtc_token?: string;
+	rtm_token?: string;
+	expires_at?: number;
 	recording?: {
 		name: string;
 		status:
@@ -216,6 +224,15 @@ export function normalizeJoinPayload(value: unknown): JoinPayload | null {
 		recording_enabled: optionalBoolean(value.recording_enabled),
 		user_data: normalizeJoinUserData(value.user_data),
 		recording: normalizeRecording(value.recording),
+		agora_app_id: optionalString(value.agora_app_id),
+		channel_name: optionalString(value.channel_name),
+		uid: optionalString(value.uid),
+		screen_uid: optionalString(value.screen_uid),
+		rtc_token: optionalString(value.rtc_token),
+		screen_rtc_token: optionalString(value.screen_rtc_token),
+		rtm_token: optionalString(value.rtm_token),
+		expires_at:
+			typeof value.expires_at === "number" ? value.expires_at : undefined,
 	};
 }
 

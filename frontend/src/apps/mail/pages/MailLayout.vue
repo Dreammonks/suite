@@ -170,14 +170,9 @@ onMounted(() => document.body.classList.add('mail-app'))
 onUnmounted(() => document.body.classList.remove('mail-app'))
 
 /* -------------------------------------------------------------------------- */
-/* Push-notification service worker.                                          */
-/*                                                                            */
-/* `sw.js` (the FCM service worker) is                                        */
-/* emitted at /assets/suite/frontend/sw.js by vite-plugin-pwa from             */
-/* src/apps/mail/sw.ts (see vite.config.ts). It is a build-only artifact, so   */
-/* push notifications work in a production build, not the dev server. Kept     */
-/* FULLY fail-safe so it never breaks the build or first paint. `firebase` is  */
-/* dynamically imported so it stays code-split out of the shared shell chunk.  */
+/* Push-notification service worker. Direct Web Push uses the shared root     */
+/* /sw.js owned by dreammonks_custom. The old FCM worker remains a dormant    */
+/* fallback for sites that explicitly configure a Frappe relay.               */
 /* -------------------------------------------------------------------------- */
 const registerServiceWorker = async () => {
 	try {
@@ -187,6 +182,13 @@ const registerServiceWorker = async () => {
 			'@/apps/mail/utils/frappe-push-notification'
 		)
 		window.frappePushNotification = new FrappePushNotification('mail')
+		if (window.dreammonks_web_push_enabled) {
+			const registration = await navigator.serviceWorker.register('/sw.js')
+			await registration.update()
+			await window.frappePushNotification.initialize(registration)
+			return
+		}
+		if (!window.push_relay_server_url) return
 
 		let serviceWorkerURL = '/assets/suite/frontend/sw.js'
 		let config: unknown = ''
@@ -211,6 +213,17 @@ const registerServiceWorker = async () => {
 		console.error('Failed to register service worker', err)
 	}
 }
+
+const reportDisplayMode = (event: MessageEvent) => {
+	if (event.data?.type !== 'dreammonks:get-display-mode') return
+	const standalone =
+		window.matchMedia('(display-mode: standalone)').matches ||
+		Boolean((navigator as Navigator & { standalone?: boolean }).standalone)
+	event.ports[0]?.postMessage({ displayMode: standalone ? 'standalone' : 'browser' })
+}
+
+onMounted(() => navigator.serviceWorker?.addEventListener('message', reportDisplayMode))
+onUnmounted(() => navigator.serviceWorker?.removeEventListener('message', reportDisplayMode))
 
 // iOS standalone scrolls the whole document to reveal a focused input above the
 // keyboard, and can leave that offset behind after dismissal — the entire shell

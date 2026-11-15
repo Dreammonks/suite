@@ -17,6 +17,9 @@ class MeetSettings(Document):
         allow_guest: DF.Check
         codec_strategy: DF.Literal["svc", "simulcast"]
         enable_recording: DF.Check
+        agora_app_id: DF.Data | None
+        agora_app_certificate: DF.Password | None
+        agora_token_expiry: DF.Int
     # end: auto-generated types
 
     pass

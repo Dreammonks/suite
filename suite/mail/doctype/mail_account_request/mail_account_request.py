@@ -522,6 +522,11 @@ def create_user(
         frappe.throw(_("User with email {0} already exists.").format(frappe.bold(email)))
 
     user = frappe.new_doc("User")
+    # Dreammonks enforces Mail-first onboarding for its own domain. This
+    # request-local flag proves that the User is being created by the flow that
+    # has already provisioned the matching Stalwart account and app password;
+    # it is never persisted on the User document.
+    user.flags.from_suite_mail_member_creation = True
     user.first_name = first_name
     user.last_name = last_name
     user.username = email

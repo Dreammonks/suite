@@ -17,6 +17,7 @@ dependencies = [
     "lxml~=6.1",  # drive: WebDAV XML (previously only a transitive dep via frappe)
     # kept for other suite modules (drive dropped these): PyJWT→meet, Markdown→writer, beautifulsoup4→mail/client
     "PyJWT>=2.8.0",
+    "agora-token-builder>=1.0.0",
     "Markdown==3.8.2",
     "beautifulsoup4>=4.13.5,<5",
     # mail
