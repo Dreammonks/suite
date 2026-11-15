@@ -56,6 +56,46 @@ def is_user_enabled(user: str) -> bool:
     return bool(frappe.db.get_value("User", user, "enabled"))
 
 
+def check_app_permission(user: str | None = None) -> bool:
+    """Returns True if the user is allowed to access Frappe Suite, else False.
+
+    Matches Frappe CRM's permission pattern:
+    1. Administrator is always allowed.
+    2. The user must have at least one Suite module in allowed_modules (not blocked in block_modules).
+    3. The user must hold one of the authorized roles (System Manager, Suite Admin, Suite User).
+    """
+    user = user or frappe.session.user
+    if is_administrator(user):
+        return True
+
+    try:
+        from frappe.utils.modules import get_modules_from_all_apps_for_user
+
+        allowed_modules = get_modules_from_all_apps_for_user(user)
+    except (ImportError, AttributeError):
+        allowed_modules = frappe.config.get_modules_from_all_apps_for_user()
+
+    allowed_module_names = {m.get("module_name") for m in allowed_modules if m.get("module_name")}
+    suite_modules = {
+        "Suite Core",
+        "Drive",
+        "Slides",
+        "Writer",
+        "Sheets",
+        "Meet",
+        "Mail",
+        "Calendar",
+    }
+    if not (allowed_module_names & suite_modules):
+        return False
+
+    user_roles = frappe.get_roles(user)
+    if any(role in ["System Manager", "Suite Admin", "Suite User"] for role in user_roles):
+        return True
+
+    return False
+
+
 def assign_role(user: User, role_name: str) -> None:
     """Append `role_name` to an in-memory User doc, creating the Role if missing.
 
